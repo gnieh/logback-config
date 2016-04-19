@@ -94,14 +94,14 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 				Encoder<?> encoder = configureEncoder(loggerContext, config.getConfig("encoder"));
 				propertySetter.setComplexProperty(propertyName, encoder);
 			} else if ("layout".equals(propertyName)) {
-				Layout<?> layout = configureObject(config.getConfig("layout"));
+				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
 				propertySetter.setComplexProperty(propertyName, layout);
 			} else if ("filter".equals(propertyName)) {
-				Filter<?> filter = configureFilter(config.getConfig("filter"));
+				Filter<?> filter = configureFilter(loggerContext, config.getConfig("filter"));
 				propertySetter.setComplexProperty(propertyName, filter);
 			} else if ("filters".equals(propertyName)) {
 				for (Config c : config.getConfigList("filters")) {
-					Filter<?> filter = configureFilter(c);
+					Filter<?> filter = configureFilter(loggerContext, c);
 					propertySetter.setComplexProperty(propertyName, filter);
 				}
 			} else {
@@ -114,11 +114,14 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
+		appender.setContext(loggerContext);
+		appender.start();
 		return appender;
 
 	}
 
-	private Layout<?> configureObject(Config config) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+	private Layout<?> configureLayout(LoggerContext loggerContext, Config config)
+			throws InstantiationException, IllegalAccessException, ClassNotFoundException {
 		Class<?> clazz = Class.forName(config.getString("class"));
 		Layout<?> layout = (Layout<?>) clazz.newInstance();
 
@@ -136,10 +139,14 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
+		layout.setContext(loggerContext);
+		layout.start();
+
 		return layout;
 	}
 
-	private Filter<?> configureFilter(Config config) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+	private Filter<?> configureFilter(LoggerContext loggerContext, Config config)
+			throws InstantiationException, IllegalAccessException, ClassNotFoundException {
 		Class<?> clazz = Class.forName(config.getString("class"));
 		Filter<?> filter = (Filter<?>) clazz.newInstance();
 
@@ -157,6 +164,9 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
+		filter.setContext(loggerContext);
+		filter.start();
+
 		return filter;
 	}
 
@@ -171,7 +181,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		for (Entry<String, ConfigValue> entry : config.withoutPath("class").entrySet()) {
 			String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
 			if ("layout".equals(propertyName)) {
-				Layout<?> layout = configureObject(config.getConfig("layout"));
+				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
 				propertySetter.setComplexProperty(propertyName, layout);
 			} else {
 				Object value = entry.getValue().unwrapped();
@@ -182,6 +192,9 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 				}
 			}
 		}
+
+		encoder.setContext(loggerContext);
+		encoder.start();
 
 		return encoder;
 	}
