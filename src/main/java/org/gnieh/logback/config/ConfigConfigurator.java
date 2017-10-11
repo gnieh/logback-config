@@ -42,7 +42,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		// load the configuration per config loading rules
 		final Config config = ConfigFactory.load().getConfig("logback");
 
-		final Config appenderConfigs = config.getConfig("logging.appenders");
+		final Config appenderConfigs = config.getConfig("appenders");
 		final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
 		for (Entry<String, ConfigValue> entry : appenderConfigs.entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
@@ -56,16 +56,16 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
-		if (config.hasPath("logging.root")) {
-			if (config.getValue("logging.root") instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, config.getConfig("logging.root"), true);
+		if (config.hasPath("root")) {
+			if (config.getValue("root") instanceof ConfigObject) {
+				configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, config.getConfig("root"), true);
 			} else {
 				addWarn("Invalid ROOT logger configuration. Ignoring it.");
 			}
 
 		}
 
-		Config loggerConfigs = config.getConfig("logging.loggers");
+		Config loggerConfigs = config.getConfig("loggers");
 		for (Entry<String, ConfigValue> entry : loggerConfigs.entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
 				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig(entry.getKey()), false);
