@@ -40,7 +40,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 	public void configure(LoggerContext loggerContext) {
 
 		// load the configuration per config loading rules
-		final Config config = ConfigFactory.load();
+		final Config config = ConfigFactory.load().getConfig("logback");
 
 		final Config appenderConfigs = config.getConfig("logging.appenders");
 		final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
