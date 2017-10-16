@@ -16,6 +16,7 @@
  */
 package org.gnieh.logback.config;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,15 +33,15 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.Configurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
-import ch.qos.logback.core.Layout;
-import ch.qos.logback.core.encoder.Encoder;
-import ch.qos.logback.core.filter.Filter;
+import ch.qos.logback.core.FileAppender;
 import ch.qos.logback.core.joran.util.beans.BeanDescriptionCache;
+import ch.qos.logback.core.rolling.RollingPolicy;
 import ch.qos.logback.core.spi.ContextAwareBase;
+import ch.qos.logback.core.spi.LifeCycle;
 
 /**
  * A configurator using Typesafe's config library to lookup and load logger
- * configruation.
+ * configuration.
  * 
  * @author Lucas Satabin
  *
@@ -51,6 +52,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 	@Override
 	public void configure(LoggerContext loggerContext) {
+		this.setContext(loggerContext);
 
 		// load the configuration per config loading rules
 		final Config config = ConfigFactory.load().getConfig("logback");
@@ -60,8 +62,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
 				try {
-					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
-							appenderConfigs.getConfig(entry.getKey())));
+					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(), appenderConfigs.getConfig("\"" + entry.getKey() + "\"")));
 				} catch (Exception e) {
 					addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
 				}
@@ -76,50 +77,33 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			} else {
 				addWarn("Invalid ROOT logger configuration. Ignoring it.");
 			}
-
 		}
 
 		Config loggerConfigs = config.getConfig("loggers");
 		for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig(entry.getKey()),
-						false);
+				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig("\"" + entry.getKey() + "\""), false);
 			} else {
 				addWarn(String.format("Invalid logger configuration %s. Ignoring it.", entry.getKey()));
 			}
 		}
-
 	}
 
-	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config)
-			throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config) throws ReflectiveOperationException {
+		List<Object> children = new ArrayList<>();
 
-		Class<?> clazz = Class.forName(config.getString("class"));
 		@SuppressWarnings("unchecked")
-		Appender<ILoggingEvent> appender = (Appender<ILoggingEvent>) clazz.newInstance();
+		Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class.forName(config.getString("class"));
 
+		Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children);
 		appender.setName(name);
 
-		// for each key appearing in the appender configuration, check whether
-		// it is a bean property and call the correct method on the appender
-		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, appender);
-		for (String key : config.withoutPath("class").root().keySet()) {
-			if ("encoder".equals(key)) {
-				Encoder<?> encoder = configureEncoder(loggerContext, config.getConfig("encoder"));
-				propertySetter.setProperty(key, encoder);
-			} else if ("layout".equals(key)) {
-				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
-				propertySetter.setProperty(key, layout);
-			} else if ("filter".equals(key)) {
-				Filter<?> filter = configureFilter(loggerContext, config.getConfig("filter"));
-				propertySetter.setProperty(key, filter);
-			} else if ("filters".equals(key)) {
-				for (Config c : config.getConfigList("filters")) {
-					Filter<?> filter = configureFilter(loggerContext, c);
-					propertySetter.setProperty(key, filter);
-				}
-			} else {
-				propertySetter.setProperty(key, config);
+		for (Object child : children) {
+			if (child instanceof RollingPolicy) {
+				((RollingPolicy) child).setParent((FileAppender<?>) appender);
+			}
+			if (child instanceof LifeCycle) {
+				((LifeCycle) child).start();
 			}
 		}
 
@@ -129,67 +113,59 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 	}
 
-	private Layout<?> configureLayout(LoggerContext loggerContext, Config config)
-			throws InstantiationException, IllegalAccessException, ClassNotFoundException {
-		Class<?> clazz = Class.forName(config.getString("class"));
-		Layout<?> layout = (Layout<?>) clazz.newInstance();
+	/**
+	 * Configure an object of a given class.
+	 * 
+	 * @param loggerContext
+	 *            the context to assign to this object if it is
+	 *            {@link ContextAwareBase}
+	 * @param clazz
+	 *            the class to instantiate
+	 * @param config
+	 *            a configuration containing the object's properties - each
+	 *            top-level key except for "class" must have a corresponding
+	 *            setter method, or an adder method in the case of lists
+	 * @param children
+	 *            a list which, if not null, will be filled with any child
+	 *            objects assigned as properties
+	 * @return the object instantiated with all properties assigned
+	 * @throws ReflectiveOperationException
+	 *             if any setter/adder method is missing or if the class cannot
+	 *             be instantiated with a no-argument constructor
+	 */
+	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children) throws ReflectiveOperationException {
+		T object = clazz.newInstance();
 
-		// for each key appearing in the layout configuration, check whether
-		// it is a bean property and call the correct method on the layout
-		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, layout);
-		for (String key : config.withoutPath("class").root().keySet()) {
-			propertySetter.setProperty(key, config);
-		}
+		if (object instanceof ContextAwareBase)
+			((ContextAwareBase) object).setContext(loggerContext);
 
-		layout.setContext(loggerContext);
-		layout.start();
-
-		return layout;
-	}
-
-	private Filter<?> configureFilter(LoggerContext loggerContext, Config config)
-			throws InstantiationException, IllegalAccessException, ClassNotFoundException {
-		Class<?> clazz = Class.forName(config.getString("class"));
-		Filter<?> filter = (Filter<?>) clazz.newInstance();
-
-		// for each key appearing in the filter configuration, check whether
-		// it is a bean property and call the correct method on the filter
-		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, filter);
-		for (String key : config.withoutPath("class").root().keySet()) {
-			propertySetter.setProperty(key, config);
-		}
-
-		filter.setContext(loggerContext);
-		filter.start();
-
-		return filter;
-	}
-
-	private Encoder<?> configureEncoder(LoggerContext loggerContext, Config config)
-			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
-		Class<?> clazz = Class.forName(config.getString("class"));
-		Encoder<?> encoder = (Encoder<?>) clazz.newInstance();
-
-		// for each key appearing in the encoder configuration, check whether
-		// it is a bean property and call the correct method on the encoder
-		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, encoder);
-		for (String key : config.withoutPath("class").root().keySet()) {
-			if ("layout".equals(key)) {
-				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
-				propertySetter.setProperty(key, layout);
-			} else {
-				propertySetter.setProperty(key, config);
+		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, object);
+		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
+			ConfigValue value = entry.getValue();
+			switch (value.valueType()) {
+			case OBJECT:
+				Config subConfig = config.getConfig("\"" + entry.getKey() + "\"");
+				if (subConfig.hasPath("class")) {
+					Class<?> childClass = Class.forName(subConfig.getString("class"));
+					Object child = this.configureObject(loggerContext, childClass, subConfig, null);
+					String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
+					propertySetter.setProperty(propertyName, child);
+					if (children != null)
+						children.add(child);
+				} else {
+					propertySetter.setProperty(entry.getKey(), config);
+				}
+				break;
+			default:
+				propertySetter.setProperty(entry.getKey(), config);
+				break;
 			}
 		}
 
-		encoder.setContext(loggerContext);
-		encoder.start();
-
-		return encoder;
+		return object;
 	}
 
-	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders,
-			String name, Config config, boolean isRoot) {
+	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders, String name, Config config, boolean isRoot) {
 		final Logger logger = loggerContext.getLogger(name);
 
 		if (config.hasPathOrNull("level")) {
