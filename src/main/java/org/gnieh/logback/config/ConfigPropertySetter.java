@@ -42,7 +42,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 
 		switch (config.getValue(name).valueType()) {
 		case LIST: {
-			Method adder = findAdderMethod(propertyName);
+			Method adder = findAdderMethod(singularize(propertyName));
 			if (adder == null) {
 				addWarn("No adder for property [" + name + "] in " + objClass.getName() + ".");
 			} else {
@@ -283,6 +283,14 @@ public class ConfigPropertySetter extends ContextAwareBase {
 					+ "] with value [" + val + "]");
 			return null;
 		}
+	}
+
+	private String singularize(String s) {
+		if (s.charAt(s.length() - 1) == 's') {
+			return s.substring(0, s.length() - 1);
+		}
+		addWarn("Failed to singularize property name " + s);
+		return s;
 	}
 
 }
