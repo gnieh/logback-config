@@ -35,11 +35,8 @@ import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.Layout;
 import ch.qos.logback.core.encoder.Encoder;
 import ch.qos.logback.core.filter.Filter;
-import ch.qos.logback.core.joran.util.PropertySetter;
 import ch.qos.logback.core.joran.util.beans.BeanDescriptionCache;
 import ch.qos.logback.core.spi.ContextAwareBase;
-
-// TODO use our own PropertySetter based on the powerful conversions performed by config
 
 /**
  * A configurator using Typesafe's config library to lookup and load logger
@@ -63,7 +60,8 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
 				try {
-					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(), appenderConfigs.getConfig(entry.getKey())));
+					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
+							appenderConfigs.getConfig(entry.getKey())));
 				} catch (Exception e) {
 					addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
 				}
@@ -84,7 +82,8 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		Config loggerConfigs = config.getConfig("loggers");
 		for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig(entry.getKey()), false);
+				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig(entry.getKey()),
+						false);
 			} else {
 				addWarn(String.format("Invalid logger configuration %s. Ignoring it.", entry.getKey()));
 			}
@@ -103,30 +102,24 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		// for each key appearing in the appender configuration, check whether
 		// it is a bean property and call the correct method on the appender
-		PropertySetter propertySetter = new PropertySetter(beanCache, appender);
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
-			String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-			if ("encoder".equals(propertyName)) {
+		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, appender);
+		for (String key : config.withoutPath("class").root().keySet()) {
+			if ("encoder".equals(key)) {
 				Encoder<?> encoder = configureEncoder(loggerContext, config.getConfig("encoder"));
-				propertySetter.setComplexProperty(propertyName, encoder);
-			} else if ("layout".equals(propertyName)) {
+				propertySetter.setProperty(key, encoder);
+			} else if ("layout".equals(key)) {
 				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
-				propertySetter.setComplexProperty(propertyName, layout);
-			} else if ("filter".equals(propertyName)) {
+				propertySetter.setProperty(key, layout);
+			} else if ("filter".equals(key)) {
 				Filter<?> filter = configureFilter(loggerContext, config.getConfig("filter"));
-				propertySetter.setComplexProperty(propertyName, filter);
-			} else if ("filters".equals(propertyName)) {
+				propertySetter.setProperty(key, filter);
+			} else if ("filters".equals(key)) {
 				for (Config c : config.getConfigList("filters")) {
 					Filter<?> filter = configureFilter(loggerContext, c);
-					propertySetter.setComplexProperty(propertyName, filter);
+					propertySetter.setProperty(key, filter);
 				}
 			} else {
-				Object value = entry.getValue().unwrapped();
-				if (value instanceof String) {
-					propertySetter.setProperty(propertyName, (String) value);
-				} else {
-					propertySetter.setComplexProperty(propertyName, value);
-				}
+				propertySetter.setProperty(key, config);
 			}
 		}
 
@@ -143,16 +136,9 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		// for each key appearing in the layout configuration, check whether
 		// it is a bean property and call the correct method on the layout
-		PropertySetter propertySetter = new PropertySetter(beanCache, layout);
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
-			String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-
-			Object value = entry.getValue().unwrapped();
-			if (value instanceof String) {
-				propertySetter.setProperty(propertyName, (String) value);
-			} else {
-				propertySetter.setComplexProperty(propertyName, value);
-			}
+		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, layout);
+		for (String key : config.withoutPath("class").root().keySet()) {
+			propertySetter.setProperty(key, config);
 		}
 
 		layout.setContext(loggerContext);
@@ -168,16 +154,9 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		// for each key appearing in the filter configuration, check whether
 		// it is a bean property and call the correct method on the filter
-		PropertySetter propertySetter = new PropertySetter(beanCache, filter);
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
-			String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-
-			Object value = entry.getValue().unwrapped();
-			if (value instanceof String) {
-				propertySetter.setProperty(propertyName, (String) value);
-			} else {
-				propertySetter.setComplexProperty(propertyName, value);
-			}
+		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, filter);
+		for (String key : config.withoutPath("class").root().keySet()) {
+			propertySetter.setProperty(key, config);
 		}
 
 		filter.setContext(loggerContext);
@@ -193,19 +172,13 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		// for each key appearing in the encoder configuration, check whether
 		// it is a bean property and call the correct method on the encoder
-		PropertySetter propertySetter = new PropertySetter(beanCache, encoder);
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
-			String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-			if ("layout".equals(propertyName)) {
+		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, encoder);
+		for (String key : config.withoutPath("class").root().keySet()) {
+			if ("layout".equals(key)) {
 				Layout<?> layout = configureLayout(loggerContext, config.getConfig("layout"));
-				propertySetter.setComplexProperty(propertyName, layout);
+				propertySetter.setProperty(key, layout);
 			} else {
-				Object value = entry.getValue().unwrapped();
-				if (value instanceof String) {
-					propertySetter.setProperty(propertyName, (String) value);
-				} else {
-					propertySetter.setComplexProperty(propertyName, value);
-				}
+				propertySetter.setProperty(key, config);
 			}
 		}
 
@@ -215,7 +188,8 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		return encoder;
 	}
 
-	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders, String name, Config config, boolean isRoot) {
+	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders,
+			String name, Config config, boolean isRoot) {
 		final Logger logger = loggerContext.getLogger(name);
 
 		if (config.hasPathOrNull("level")) {
