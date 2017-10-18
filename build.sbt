@@ -10,6 +10,8 @@ homepage := Some(url("https://github.com/gnieh/logback-config"))
 
 libraryDependencies += "ch.qos.logback"  % "logback-classic" % "1.1.7"
 libraryDependencies += "com.typesafe"  % "config" % "1.3.0"
+libraryDependencies += "junit" % "junit" % "4.12" % Test
+libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % Test
 
 // publish settings
 publishMavenStyle := true
