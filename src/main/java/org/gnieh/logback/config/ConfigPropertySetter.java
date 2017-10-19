@@ -12,12 +12,49 @@ import java.util.stream.Collectors;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigMemorySize;
 
+import ch.qos.logback.core.Context;
 import ch.qos.logback.core.CoreConstants;
 import ch.qos.logback.core.joran.util.beans.BeanDescription;
 import ch.qos.logback.core.joran.util.beans.BeanDescriptionCache;
 import ch.qos.logback.core.spi.ContextAwareBase;
 import ch.qos.logback.core.util.PropertySetterException;
 
+/**
+ * General purpose Object property setter for setting properties via a
+ * {@link Config}. Clients repeatedly invoke {@link #setProperty
+ * setProperty(key,config)} in order to invoke setters on the Object specified
+ * in the constructor.
+ *
+ * <p>
+ * Usage:
+ * <p>
+ * Assume the configuration contains:
+ * 
+ * <pre>
+ * first-name = Joe
+ * age = 32
+ * male = true
+ * </pre>
+ *
+ * The following code:
+ * 
+ * <pre>
+ * ConfigPropertySetter ps = new ConfigPropertySetter(beanCache, obj);
+ * ps.setProperty(&quot;first-name&quot;, config);
+ * ps.setProperty(&quot;age&quot;, config);
+ * ps.setProperty(&quot;male&quot;, config);
+ * </pre>
+ *
+ * will cause the invocations obj.setFirstName("Joe"), obj.setAge(32), and
+ * obj.setMale(true) if methods exist with these signatures. Otherwise
+ * appropriate warnings and/or errors are added to the associated
+ * {@link Context}.
+ * 
+ * <p>
+ * 
+ * The client can also set a previously constructed object directly via
+ * {@link #setRawProperty(String, Object)}.
+ */
 public class ConfigPropertySetter extends ContextAwareBase {
 
 	private static final Class<?>[] STRING_CLASS_PARAMETER = new Class[] { String.class };
@@ -32,24 +69,31 @@ public class ConfigPropertySetter extends ContextAwareBase {
 		this.beanDescription = beanDescriptionCache.getBeanDescription(objClass);
 	}
 
-	public void setProperty(final String name, final Config config) {
+	/**
+	 * Set the property corresponding to a given key in the provided Config.
+	 * Configuration keys are mangled to a property name with following rule:
+	 * any dash (-) followed by a letter is mangled into the uppercased letter.
+	 * For example, configuration key my-property-name is mangled as
+	 * myPropertyName.
+	 */
+	public void setProperty(final String key, final Config config) {
 
-		if (!config.hasPath(name)) {
+		if (!config.hasPath(key)) {
 			return;
 		}
 
-		String propertyName = NameUtils.toLowerCamelCase(name);
+		String propertyName = NameUtils.toLowerCamelCase(key);
 
-		switch (config.getValue(name).valueType()) {
+		switch (config.getValue(key).valueType()) {
 		case LIST: {
 			Method adder = findAdderMethod(singularize(propertyName));
 			if (adder == null) {
-				addWarn("No adder for property [" + name + "] in " + objClass.getName() + ".");
+				addWarn("No adder for property [" + key + "] in " + objClass.getName() + ".");
 			} else {
 				try {
-					addProperty(adder, name, config);
+					addProperty(adder, key, config);
 				} catch (PropertySetterException ex) {
-					addWarn("Failed to add property [" + name + "] to value \"" + config.getString(name) + "\". ", ex);
+					addWarn("Failed to add property [" + key + "] to value \"" + config.getString(key) + "\". ", ex);
 				}
 			}
 			break;
@@ -57,12 +101,12 @@ public class ConfigPropertySetter extends ContextAwareBase {
 		default: {
 			Method setter = findSetterMethod(propertyName);
 			if (setter == null) {
-				addWarn("No setter for property [" + name + "] in " + objClass.getName() + ".");
+				addWarn("No setter for property [" + key + "] in " + objClass.getName() + ".");
 			} else {
 				try {
-					setProperty(setter, name, config);
+					setProperty(setter, key, config);
 				} catch (PropertySetterException ex) {
-					addWarn("Failed to set property [" + name + "] to value \"" + config.getString(name) + "\". ", ex);
+					addWarn("Failed to set property [" + key + "] to value \"" + config.getString(key) + "\". ", ex);
 				}
 			}
 			break;
@@ -71,18 +115,22 @@ public class ConfigPropertySetter extends ContextAwareBase {
 
 	}
 
-	public void setProperty(String name, Object complexProperty) {
-		Method setter = findSetterMethod(name);
+	/**
+	 * Set a property directly using the property name and a previously
+	 * constructed object.
+	 */
+	public void setRawProperty(String propertyName, Object complexProperty) {
+		Method setter = findSetterMethod(propertyName);
 
 		if (setter == null) {
-			addWarn("Not setter method for property [" + name + "] in " + obj.getClass().getName());
+			addWarn("Not setter method for property [" + propertyName + "] in " + obj.getClass().getName());
 
 			return;
 		}
 
 		Class<?>[] paramTypes = setter.getParameterTypes();
 
-		if (!isSanityCheckSuccessful(name, setter, paramTypes, complexProperty)) {
+		if (!isSanityCheckSuccessful(propertyName, setter, paramTypes, complexProperty)) {
 			return;
 		}
 		try {
