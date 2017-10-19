@@ -149,7 +149,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 					Class<?> childClass = Class.forName(subConfig.getString("class"));
 					Object child = this.configureObject(loggerContext, childClass, subConfig, null);
 					String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-					propertySetter.setProperty(propertyName, child);
+					propertySetter.setRawProperty(propertyName, child);
 					if (children != null)
 						children.add(child);
 				} else {
