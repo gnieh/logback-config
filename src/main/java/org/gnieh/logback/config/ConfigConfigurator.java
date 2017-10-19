@@ -62,7 +62,8 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
 				try {
-					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(), appenderConfigs.getConfig("\"" + entry.getKey() + "\"")));
+					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
+							appenderConfigs.getConfig("\"" + entry.getKey() + "\"")));
 				} catch (Exception e) {
 					addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
 				}
@@ -82,18 +83,21 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		Config loggerConfigs = config.getConfig("loggers");
 		for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, entry.getKey(), loggerConfigs.getConfig("\"" + entry.getKey() + "\""), false);
+				configureLogger(loggerContext, appenders, entry.getKey(),
+						loggerConfigs.getConfig("\"" + entry.getKey() + "\""), false);
 			} else {
 				addWarn(String.format("Invalid logger configuration %s. Ignoring it.", entry.getKey()));
 			}
 		}
 	}
 
-	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config) throws ReflectiveOperationException {
+	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config)
+			throws ReflectiveOperationException {
 		List<Object> children = new ArrayList<>();
 
 		@SuppressWarnings("unchecked")
-		Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class.forName(config.getString("class"));
+		Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class
+				.forName(config.getString("class"));
 
 		Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children);
 		appender.setName(name);
@@ -107,7 +111,6 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
-		appender.setContext(loggerContext);
 		appender.start();
 		return appender;
 
@@ -133,13 +136,16 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 	 *             if any setter/adder method is missing or if the class cannot
 	 *             be instantiated with a no-argument constructor
 	 */
-	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children) throws ReflectiveOperationException {
+	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children)
+			throws ReflectiveOperationException {
 		T object = clazz.newInstance();
 
 		if (object instanceof ContextAwareBase)
 			((ContextAwareBase) object).setContext(loggerContext);
 
 		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, object);
+		propertySetter.setContext(loggerContext);
+
 		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
 			ConfigValue value = entry.getValue();
 			switch (value.valueType()) {
@@ -165,7 +171,8 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		return object;
 	}
 
-	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders, String name, Config config, boolean isRoot) {
+	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders,
+			String name, Config config, boolean isRoot) {
 		final Logger logger = loggerContext.getLogger(name);
 
 		if (config.hasPathOrNull("level")) {
