@@ -3,6 +3,26 @@ logback-config
 
 [Typesafe config](https://github.com/typesafehub/config/) configurator for Logback.
 
+Installation
+------------
+
+If you use maven, add the dependency to your `pom.xml` file:
+
+```xml
+<dependency>
+  <groupId>org.gnieh</groupId>
+  <artifactId>logback-config</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+
+If you use sbt, add this dependency to your `build.sbt` file:
+
+```scala
+libraryDependencies += "org.gnieh" % "logback.config" % "0.1.0"
+```
+
 Format
 ------
 
