@@ -17,7 +17,6 @@ import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.rolling.RollingFileAppender;
-import ch.qos.logback.core.rolling.SizeAndTimeBasedFNATP;
 import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
 import ch.qos.logback.core.status.Status;
 
@@ -72,11 +71,6 @@ public class ConfigConfiguratorTest {
 		assertEquals(30, rollingPolicy.getMaxHistory());
 		assertTrue(rollingPolicy.isStarted());
 
-		assertTrue(rollingPolicy.getTimeBasedFileNamingAndTriggeringPolicy() instanceof SizeAndTimeBasedFNATP);
-
-		SizeAndTimeBasedFNATP<?> triggeringPolicy = (SizeAndTimeBasedFNATP<?>) rollingPolicy.getTimeBasedFileNamingAndTriggeringPolicy();
-		assertEquals("5MB", triggeringPolicy.getMaxFileSize());
-		assertTrue(triggeringPolicy.isStarted());
 	}
 
 	@Test

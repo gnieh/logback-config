@@ -16,7 +16,7 @@ import ch.qos.logback.core.joran.util.beans.BeanDescriptionCache;
 
 public class ConfigPropertySetterTest {
 
-	private BeanDescriptionCache beanCache = new BeanDescriptionCache();
+	private BeanDescriptionCache beanCache = new BeanDescriptionCache(null);
 
 	@Test
 	public void testIntProperty() {

@@ -8,8 +8,8 @@ licenses += ("The Apache Software License, Version 2.0" -> url("http://www.apach
 
 homepage := Some(url("https://github.com/gnieh/logback-config"))
 
-libraryDependencies += "ch.qos.logback"  % "logback-classic" % "1.1.7"
-libraryDependencies += "com.typesafe"  % "config" % "1.3.0"
+libraryDependencies += "ch.qos.logback"  % "logback-classic" % "1.2.3"
+libraryDependencies += "com.typesafe"  % "config" % "1.3.2"
 libraryDependencies += "junit" % "junit" % "4.12" % Test
 libraryDependencies += "com.novocode" % "junit-interface" % "0.11" % Test
 

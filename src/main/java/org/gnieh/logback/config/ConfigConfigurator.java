@@ -48,11 +48,12 @@ import ch.qos.logback.core.spi.LifeCycle;
  */
 public class ConfigConfigurator extends ContextAwareBase implements Configurator {
 
-	private BeanDescriptionCache beanCache = new BeanDescriptionCache();
-
 	@Override
 	public void configure(LoggerContext loggerContext) {
+
 		this.setContext(loggerContext);
+
+		BeanDescriptionCache beanCache = new BeanDescriptionCache(loggerContext);
 
 		// load the configuration per config loading rules
 		final Config config = ConfigFactory.load().getConfig("logback");
@@ -63,7 +64,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			if (entry.getValue() instanceof ConfigObject) {
 				try {
 					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
-							appenderConfigs.getConfig("\"" + entry.getKey() + "\"")));
+							appenderConfigs.getConfig("\"" + entry.getKey() + "\""), beanCache));
 				} catch (Exception e) {
 					addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
 				}
@@ -91,15 +92,15 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		}
 	}
 
-	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config)
-			throws ReflectiveOperationException {
+	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config,
+			BeanDescriptionCache beanCache) throws ReflectiveOperationException {
 		List<Object> children = new ArrayList<>();
 
 		@SuppressWarnings("unchecked")
 		Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class
 				.forName(config.getString("class"));
 
-		Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children);
+		Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children, beanCache);
 		appender.setName(name);
 
 		for (Object child : children) {
@@ -126,18 +127,20 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 	 *            the class to instantiate
 	 * @param config
 	 *            a configuration containing the object's properties - each
-	 *            top-level key except for "class" must have a corresponding
-	 *            setter method, or an adder method in the case of lists
+	 *            top-level key except for "class" must have a corresponding setter
+	 *            method, or an adder method in the case of lists
 	 * @param children
-	 *            a list which, if not null, will be filled with any child
-	 *            objects assigned as properties
+	 *            a list which, if not null, will be filled with any child objects
+	 *            assigned as properties
+	 * @param beanCache
+	 *            the bean cache instance
 	 * @return the object instantiated with all properties assigned
 	 * @throws ReflectiveOperationException
-	 *             if any setter/adder method is missing or if the class cannot
-	 *             be instantiated with a no-argument constructor
+	 *             if any setter/adder method is missing or if the class cannot be
+	 *             instantiated with a no-argument constructor
 	 */
-	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children)
-			throws ReflectiveOperationException {
+	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children,
+			BeanDescriptionCache beanCache) throws ReflectiveOperationException {
 		T object = clazz.newInstance();
 
 		if (object instanceof ContextAwareBase)
@@ -146,14 +149,19 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, object);
 		propertySetter.setContext(loggerContext);
 
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").root().entrySet()) {
+		// file property (if any) must be set before any other property for appenders
+		if (config.hasPath("file")) {
+			propertySetter.setProperty("file", config);
+		}
+
+		for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
 			ConfigValue value = entry.getValue();
 			switch (value.valueType()) {
 			case OBJECT:
 				Config subConfig = config.getConfig("\"" + entry.getKey() + "\"");
 				if (subConfig.hasPath("class")) {
 					Class<?> childClass = Class.forName(subConfig.getString("class"));
-					Object child = this.configureObject(loggerContext, childClass, subConfig, null);
+					Object child = this.configureObject(loggerContext, childClass, subConfig, null, beanCache);
 					String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
 					propertySetter.setRawProperty(propertyName, child);
 					if (children != null)
