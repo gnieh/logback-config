@@ -5,10 +5,12 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.Charset;
 import java.nio.charset.UnsupportedCharsetException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import ch.qos.logback.core.subst.NodeToStringTransformer;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigMemorySize;
 
@@ -76,7 +78,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 	 * For example, configuration key my-property-name is mangled as
 	 * myPropertyName.
 	 */
-	public void setProperty(final String key, final Config config) {
+	public void setProperty(final String key, final Config config, final Context context) {
 
 		if (!config.hasPath(key)) {
 			return;
@@ -93,7 +95,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 				try {
 					addProperty(adder, key, config);
 				} catch (PropertySetterException ex) {
-					addWarn("Failed to add property [" + key + "] to value \"" + config.getString(key) + "\". ", ex);
+					addWarn("Failed to add property [" + key + "] to value \"" + config.getValue(key) + "\". ", ex);
 				}
 			}
 			break;
@@ -104,9 +106,9 @@ public class ConfigPropertySetter extends ContextAwareBase {
 				addWarn("No setter for property [" + key + "] in " + objClass.getName() + ".");
 			} else {
 				try {
-					setProperty(setter, key, config);
+					setProperty(setter, key, config, context);
 				} catch (PropertySetterException ex) {
-					addWarn("Failed to set property [" + key + "] to value \"" + config.getString(key) + "\". ", ex);
+					addWarn("Failed to set property [" + key + "] to value \"" + config.getValue(key) + "\". ", ex);
 				}
 			}
 			break;
@@ -181,7 +183,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 	}
 
 	@SuppressWarnings("unchecked")
-	private void setProperty(Method setter, String name, Config config) throws PropertySetterException {
+	private void setProperty(Method setter, String name, Config config, Context context) throws PropertySetterException {
 		Class<?>[] paramTypes = setter.getParameterTypes();
 
 		final Object arg;
@@ -191,7 +193,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 			Class<?> type = paramTypes[0];
 
 			if (String.class.isAssignableFrom(type)) {
-				arg = config.getString(name);
+				arg = NodeToStringTransformer.substituteVariable(config.getString(name), context, null);
 			} else if (Integer.TYPE.isAssignableFrom(type)) {
 				arg = new Integer(config.getInt(name));
 			} else if (Long.TYPE.isAssignableFrom(type)) {
@@ -209,11 +211,14 @@ public class ConfigPropertySetter extends ContextAwareBase {
 			} else if (ConfigMemorySize.class.isAssignableFrom(type)) {
 				arg = config.getMemorySize(name);
 			} else if (type.isEnum()) {
-				arg = convertToEnum(config.getString(name), (Class<? extends Enum<?>>) type);
+				final String subst = NodeToStringTransformer.substituteVariable(config.getString(name), context, null);
+				arg = convertToEnum(subst, (Class<? extends Enum<?>>) type);
 			} else if (followsTheValueOfConvention(type)) {
-				arg = convertByValueOfMethod(type, config.getString(name));
+				final String subst = NodeToStringTransformer.substituteVariable(config.getString(name), context, null);
+				arg = convertByValueOfMethod(type, subst);
 			} else if (isOfTypeCharset(type)) {
-				arg = convertToCharset(config.getString(name));
+				final String subst = NodeToStringTransformer.substituteVariable(config.getString(name), context, null);
+				arg = convertToCharset(subst);
 			} else {
 				arg = null;
 			}
@@ -243,7 +248,12 @@ public class ConfigPropertySetter extends ContextAwareBase {
 			Class<?> type = paramTypes[0];
 
 			if (String.class.isAssignableFrom(type)) {
-				arg = config.getStringList(name);
+				final List<String> strings = config.getStringList(name);
+				final List<String> result = new ArrayList<>(strings.size());
+				for(String s : strings) {
+					result.add(NodeToStringTransformer.substituteVariable(s, context, null));
+				}
+				arg = result;
 			} else if (Integer.TYPE.isAssignableFrom(type)) {
 				arg = config.getIntList(name);
 			} else if (Long.TYPE.isAssignableFrom(type)) {
@@ -261,13 +271,29 @@ public class ConfigPropertySetter extends ContextAwareBase {
 			} else if (ConfigMemorySize.class.isAssignableFrom(type)) {
 				arg = config.getMemorySizeList(name);
 			} else if (type.isEnum()) {
-				arg = config.getStringList(name).stream().map(s -> convertToEnum(s, (Class<? extends Enum<?>>) type))
-						.collect(Collectors.toList());
+				final List<String> strings = config.getStringList(name);
+				final List<Object> result = new ArrayList<>(strings.size());
+				for(String s : strings) {
+					final String subst = NodeToStringTransformer.substituteVariable(s, context, null);
+					result.add(convertToEnum(subst, (Class<? extends Enum<?>>) type));
+				}
+				arg = result;
 			} else if (followsTheValueOfConvention(type)) {
-				arg = config.getStringList(name).stream().map(s -> convertByValueOfMethod(type, s))
-						.collect(Collectors.toList());
+				final List<String> strings = config.getStringList(name);
+				final List<Object> result = new ArrayList<>(strings.size());
+				for(String s : strings) {
+					final String subst = NodeToStringTransformer.substituteVariable(s, context, null);
+					result.add(convertByValueOfMethod(type, subst));
+				}
+				arg = result;
 			} else if (isOfTypeCharset(type)) {
-				arg = config.getStringList(name).stream().map(s -> convertToCharset(s)).collect(Collectors.toList());
+				final List<String> strings = config.getStringList(name);
+				final List<Object> result = new ArrayList<>(strings.size());
+				for(String s : strings) {
+					final String subst = NodeToStringTransformer.substituteVariable(s, context, null);
+					result.add(convertToCharset(subst));
+				}
+				arg = result;
 			} else {
 				arg = Collections.emptyList();
 			}

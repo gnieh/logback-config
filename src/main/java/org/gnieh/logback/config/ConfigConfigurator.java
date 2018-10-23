@@ -154,7 +154,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		// file property (if any) must be set before any other property for appenders
 		if (config.hasPath("file")) {
-			propertySetter.setProperty("file", config);
+			propertySetter.setProperty("file", config, context);
 		}
 
 		for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
@@ -170,11 +170,11 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 					if (children != null)
 						children.add(child);
 				} else {
-					propertySetter.setProperty(entry.getKey(), config);
+					propertySetter.setProperty(entry.getKey(), config, context);
 				}
 				break;
 			default:
-				propertySetter.setProperty(entry.getKey(), config);
+				propertySetter.setProperty(entry.getKey(), config, context);
 				break;
 			}
 		}
