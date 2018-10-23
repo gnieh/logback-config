@@ -42,7 +42,7 @@ import ch.qos.logback.core.spi.LifeCycle;
 /**
  * A configurator using Typesafe's config library to lookup and load logger
  * configuration.
- * 
+ *
  * @author Lucas Satabin
  *
  */
@@ -55,10 +55,13 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 		BeanDescriptionCache beanCache = new BeanDescriptionCache(loggerContext);
 
+		final Config config = ConfigFactory.load();
+		// get the logback configuration root
+		final String logbackConfigRoot = config.getString("logback-root");
 		// load the configuration per config loading rules
-		final Config config = ConfigFactory.load().getConfig("logback");
+		final Config logbackConfig = config.getConfig(logbackConfigRoot);
 
-		final Config appenderConfigs = config.getConfig("appenders");
+		final Config appenderConfigs = logbackConfig.getConfig("appenders");
 		final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
 		for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
@@ -73,15 +76,15 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 			}
 		}
 
-		if (config.hasPath("root")) {
-			if (config.getValue("root") instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, config.getConfig("root"), true);
+		if (logbackConfig.hasPath("root")) {
+			if (logbackConfig.getValue("root") instanceof ConfigObject) {
+				configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, logbackConfig.getConfig("root"), true);
 			} else {
 				addWarn("Invalid ROOT logger configuration. Ignoring it.");
 			}
 		}
 
-		Config loggerConfigs = config.getConfig("loggers");
+		Config loggerConfigs = logbackConfig.getConfig("loggers");
 		for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
 			if (entry.getValue() instanceof ConfigObject) {
 				configureLogger(loggerContext, appenders, entry.getKey(),
@@ -119,7 +122,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
 	/**
 	 * Configure an object of a given class.
-	 * 
+	 *
 	 * @param loggerContext
 	 *            the context to assign to this object if it is
 	 *            {@link ContextAwareBase}
