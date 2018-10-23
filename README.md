@@ -23,6 +23,37 @@ If you use sbt, add this dependency to your `build.sbt` file:
 libraryDependencies += "org.gnieh" % "logback.config" % "0.1.0"
 ```
 
+Configuration root
+------------------
+
+By default the logback configuration keys are all under the top-level `logback` key. You can override this by changing the value of the `logback-root` key.
+For instance, let's say you have two different logging configurations, one for testing and one for production. In your `reference.conf` file you can have:
+
+```scala
+logback-root = production.logback
+
+production {
+  logback = ${logback} {
+    // logging configruation, see below
+  }
+}
+```
+
+In your test configuration file you may then have:
+
+```scala
+logback-root = test.logback
+
+test {
+  logback = ${logback} {
+    // logging configruation, see below
+  }
+}
+```
+
+Inheriting from the default `logback` configuration object brings a valid empty configuration, so that only required keys must be defined.
+It is not necessary though, if your configuration defines all the required keys (`appenders`, `loggers`, and `root`, see below).
+
 Format
 ------
 
@@ -104,10 +135,10 @@ Encoder configuration looks like this:
 
   // optional
   level = DEBUG // or any other level as described at https://logback.qos.ch/manual/architecture.html#effectiveLevel
-  
+
   // optional
   additivity = true // or any other boolean value (see conversions below) as described at https://logback.qos.ch/manual/architecture.html#additivity
-  
+
   // optional
   appenders = [ "appender-name", ... ]
 }
@@ -130,6 +161,6 @@ integer         | `int`
 floating point  | `double`
 string          | `java.lang.String`
 boolean         | `boolean`
-null            | `null` 
+null            | `null`
 array           | `java.util.List`
 object          | `java.util.Map<java.lang.String,java.lang.Object>`
