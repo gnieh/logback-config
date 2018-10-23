@@ -16,12 +16,15 @@
  */
 package org.gnieh.logback.config;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import ch.qos.logback.classic.jmx.JMXConfigurator;
+import ch.qos.logback.classic.jmx.MBeanUtil;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigObject;
@@ -39,181 +42,214 @@ import ch.qos.logback.core.rolling.RollingPolicy;
 import ch.qos.logback.core.spi.ContextAwareBase;
 import ch.qos.logback.core.spi.LifeCycle;
 
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
+
 /**
  * A configurator using Typesafe's config library to lookup and load logger
  * configuration.
  *
  * @author Lucas Satabin
- *
  */
 public class ConfigConfigurator extends ContextAwareBase implements Configurator {
 
-	@Override
-	public void configure(LoggerContext loggerContext) {
+    @Override
+    public void configure(LoggerContext loggerContext) {
 
-		this.setContext(loggerContext);
+        this.setContext(loggerContext);
 
-		BeanDescriptionCache beanCache = new BeanDescriptionCache(loggerContext);
+        BeanDescriptionCache beanCache = new BeanDescriptionCache(loggerContext);
 
-		final Config config = ConfigFactory.load();
-		// get the logback configuration root
-		final String logbackConfigRoot = config.getString("logback-root");
-		// load the configuration per config loading rules
-		final Config logbackConfig = config.getConfig(logbackConfigRoot);
+        final Config config = ConfigFactory.load();
+        // get the logback configuration root
+        final String logbackConfigRoot = config.getString("logback-root");
+        // load the configuration per config loading rules
+        final Config logbackConfig = config.getConfig(logbackConfigRoot);
 
-		final Config appenderConfigs = logbackConfig.getConfig("appenders");
-		final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
-		for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
-			if (entry.getValue() instanceof ConfigObject) {
-				try {
-					appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
-							appenderConfigs.getConfig("\"" + entry.getKey() + "\""), beanCache));
-				} catch (Exception e) {
-					addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
-				}
-			} else {
-				addWarn(String.format("Invalid appender configuration %s. Ignoring it.", entry.getKey()));
-			}
-		}
+        final Config appenderConfigs = logbackConfig.getConfig("appenders");
+        final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
+        for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
+            if (entry.getValue() instanceof ConfigObject) {
+                try {
+                    appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
+                            appenderConfigs.getConfig("\"" + entry.getKey() + "\""), beanCache));
+                } catch (Exception e) {
+                    addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
+                }
+            } else {
+                addWarn(String.format("Invalid appender configuration %s. Ignoring it.", entry.getKey()));
+            }
+        }
 
-		if (logbackConfig.hasPath("root")) {
-			if (logbackConfig.getValue("root") instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, logbackConfig.getConfig("root"), true);
-			} else {
-				addWarn("Invalid ROOT logger configuration. Ignoring it.");
-			}
-		}
+        if (logbackConfig.hasPath("root")) {
+            if (logbackConfig.getValue("root") instanceof ConfigObject) {
+                configureLogger(loggerContext, appenders, Logger.ROOT_LOGGER_NAME, logbackConfig.getConfig("root"), true);
+            } else {
+                addWarn("Invalid ROOT logger configuration. Ignoring it.");
+            }
+        }
 
-		Config loggerConfigs = logbackConfig.getConfig("loggers");
-		for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
-			if (entry.getValue() instanceof ConfigObject) {
-				configureLogger(loggerContext, appenders, entry.getKey(),
-						loggerConfigs.getConfig("\"" + entry.getKey() + "\""), false);
-			} else {
-				addWarn(String.format("Invalid logger configuration %s. Ignoring it.", entry.getKey()));
-			}
-		}
-	}
+        Config loggerConfigs = logbackConfig.getConfig("loggers");
+        for (Entry<String, ConfigValue> entry : loggerConfigs.root().entrySet()) {
+            if (entry.getValue() instanceof ConfigObject) {
+                configureLogger(loggerContext, appenders, entry.getKey(),
+                        loggerConfigs.getConfig("\"" + entry.getKey() + "\""), false);
+            } else {
+                addWarn(String.format("Invalid logger configuration %s. Ignoring it.", entry.getKey()));
+            }
+        }
 
-	private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config,
-			BeanDescriptionCache beanCache) throws ReflectiveOperationException {
-		List<Object> children = new ArrayList<>();
+        if (logbackConfig.hasPath("jmx-configurator")) {
+            final Config jmxConfig = logbackConfig.getConfig("jmx-configurator");
+            final String contextName;
+            if (jmxConfig.hasPath("context-name")) {
+                contextName = jmxConfig.getString("context-name");
+            } else {
+                contextName = context.getName();
+            }
 
-		@SuppressWarnings("unchecked")
-		Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class
-				.forName(config.getString("class"));
+            final String objectNameAsStr;
+            if (jmxConfig.hasPath("object-name")) {
+                objectNameAsStr = jmxConfig.getString("object-name");
+            } else {
+                objectNameAsStr = MBeanUtil.getObjectNameFor(contextName, JMXConfigurator.class);
+            }
 
-		Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children, beanCache);
-		appender.setName(name);
+            ObjectName objectName = MBeanUtil.string2ObjectName(context, this, objectNameAsStr);
+            if (objectName == null) {
+                addError("Failed construct ObjectName for [" + objectNameAsStr + "]");
+                return;
+            }
 
-		for (Object child : children) {
-			if (child instanceof RollingPolicy) {
-				((RollingPolicy) child).setParent((FileAppender<?>) appender);
-			}
-			if (child instanceof LifeCycle) {
-				((LifeCycle) child).start();
-			}
-		}
+            MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+            if (!MBeanUtil.isRegistered(mbs, objectName)) {
+                // register only of the named JMXConfigurator has not been previously
+                // registered. Unregistering an MBean within invocation of itself
+                // caused jconsole to throw an NPE. (This occurs when the reload* method
+                // unregisters the
+                JMXConfigurator jmxConfigurator = new JMXConfigurator((LoggerContext) context, mbs, objectName);
+                try {
+                    mbs.registerMBean(jmxConfigurator, objectName);
+                } catch (Exception e) {
+                    addError("Failed to create mbean", e);
+                }
+            }
+        }
+    }
 
-		appender.start();
-		return appender;
+    private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config,
+                                                      BeanDescriptionCache beanCache) throws ReflectiveOperationException {
+        List<Object> children = new ArrayList<>();
 
-	}
+        @SuppressWarnings("unchecked")
+        Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class
+                .forName(config.getString("class"));
 
-	/**
-	 * Configure an object of a given class.
-	 *
-	 * @param loggerContext
-	 *            the context to assign to this object if it is
-	 *            {@link ContextAwareBase}
-	 * @param clazz
-	 *            the class to instantiate
-	 * @param config
-	 *            a configuration containing the object's properties - each
-	 *            top-level key except for "class" must have a corresponding setter
-	 *            method, or an adder method in the case of lists
-	 * @param children
-	 *            a list which, if not null, will be filled with any child objects
-	 *            assigned as properties
-	 * @param beanCache
-	 *            the bean cache instance
-	 * @return the object instantiated with all properties assigned
-	 * @throws ReflectiveOperationException
-	 *             if any setter/adder method is missing or if the class cannot be
-	 *             instantiated with a no-argument constructor
-	 */
-	private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children,
-			BeanDescriptionCache beanCache) throws ReflectiveOperationException {
-		T object = clazz.newInstance();
+        Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children, beanCache);
+        appender.setName(name);
 
-		if (object instanceof ContextAwareBase)
-			((ContextAwareBase) object).setContext(loggerContext);
+        for (Object child : children) {
+            if (child instanceof RollingPolicy) {
+                ((RollingPolicy) child).setParent((FileAppender<?>) appender);
+            }
+            if (child instanceof LifeCycle) {
+                ((LifeCycle) child).start();
+            }
+        }
 
-		ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, object);
-		propertySetter.setContext(loggerContext);
+        appender.start();
+        return appender;
 
-		// file property (if any) must be set before any other property for appenders
-		if (config.hasPath("file")) {
-			propertySetter.setProperty("file", config, context);
-		}
+    }
 
-		for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
-			ConfigValue value = entry.getValue();
-			switch (value.valueType()) {
-			case OBJECT:
-				Config subConfig = config.getConfig("\"" + entry.getKey() + "\"");
-				if (subConfig.hasPath("class")) {
-					Class<?> childClass = Class.forName(subConfig.getString("class"));
-					Object child = this.configureObject(loggerContext, childClass, subConfig, null, beanCache);
-					String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
-					propertySetter.setRawProperty(propertyName, child);
-					if (children != null)
-						children.add(child);
-				} else {
-					propertySetter.setProperty(entry.getKey(), config, context);
-				}
-				break;
-			default:
-				propertySetter.setProperty(entry.getKey(), config, context);
-				break;
-			}
-		}
+    /**
+     * Configure an object of a given class.
+     *
+     * @param loggerContext the context to assign to this object if it is
+     *                      {@link ContextAwareBase}
+     * @param clazz         the class to instantiate
+     * @param config        a configuration containing the object's properties - each
+     *                      top-level key except for "class" must have a corresponding setter
+     *                      method, or an adder method in the case of lists
+     * @param children      a list which, if not null, will be filled with any child objects
+     *                      assigned as properties
+     * @param beanCache     the bean cache instance
+     * @return the object instantiated with all properties assigned
+     * @throws ReflectiveOperationException if any setter/adder method is missing or if the class cannot be
+     *                                      instantiated with a no-argument constructor
+     */
+    private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children,
+                                  BeanDescriptionCache beanCache) throws ReflectiveOperationException {
+        T object = clazz.newInstance();
 
-		return object;
-	}
+        if (object instanceof ContextAwareBase)
+            ((ContextAwareBase) object).setContext(loggerContext);
 
-	private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders,
-			String name, Config config, boolean isRoot) {
-		final Logger logger = loggerContext.getLogger(name);
+        ConfigPropertySetter propertySetter = new ConfigPropertySetter(beanCache, object);
+        propertySetter.setContext(loggerContext);
 
-		if (config.hasPathOrNull("level")) {
-			if (config.getIsNull("level") && isRoot) {
-				addWarn("Log level NULL is not authorized for ROOT logger");
-			} else if (!config.getIsNull("level")) {
-				String levelName = config.getString("level");
-				if (isRoot && (levelName.equalsIgnoreCase("NULL") || levelName.equalsIgnoreCase("INHERITED"))) {
-					addWarn(String.format("Log level %s is not authorized for ROOT logger.", levelName.toUpperCase()));
-				} else if (!levelName.equalsIgnoreCase("NULL") && !levelName.equalsIgnoreCase("INHERITED")) {
-					logger.setLevel(Level.toLevel(config.getString("level")));
-				}
-			}
-		}
+        // file property (if any) must be set before any other property for appenders
+        if (config.hasPath("file")) {
+            propertySetter.setProperty("file", config, context);
+        }
 
-		if (config.hasPath("additivity")) {
-			logger.setAdditive(config.getBoolean("additivity"));
-		}
+        for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
+            ConfigValue value = entry.getValue();
+            switch (value.valueType()) {
+                case OBJECT:
+                    Config subConfig = config.getConfig("\"" + entry.getKey() + "\"");
+                    if (subConfig.hasPath("class")) {
+                        Class<?> childClass = Class.forName(subConfig.getString("class"));
+                        Object child = this.configureObject(loggerContext, childClass, subConfig, null, beanCache);
+                        String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
+                        propertySetter.setRawProperty(propertyName, child);
+                        if (children != null)
+                            children.add(child);
+                    } else {
+                        propertySetter.setProperty(entry.getKey(), config, context);
+                    }
+                    break;
+                default:
+                    propertySetter.setProperty(entry.getKey(), config, context);
+                    break;
+            }
+        }
 
-		if (config.hasPath("appenders")) {
-			List<String> appenderRefs = config.getStringList("appenders");
-			for (String appenderRef : appenderRefs) {
-				if (appenders.containsKey(appenderRef)) {
-					logger.addAppender(appenders.get(appenderRef));
-				} else {
-					addWarn(String.format("Unknown appender %s. Ignoring it.", appenderRef));
-				}
-			}
-		}
+        return object;
+    }
 
-	}
+    private void configureLogger(LoggerContext loggerContext, Map<String, Appender<ILoggingEvent>> appenders,
+                                 String name, Config config, boolean isRoot) {
+        final Logger logger = loggerContext.getLogger(name);
+
+        if (config.hasPathOrNull("level")) {
+            if (config.getIsNull("level") && isRoot) {
+                addWarn("Log level NULL is not authorized for ROOT logger");
+            } else if (!config.getIsNull("level")) {
+                String levelName = config.getString("level");
+                if (isRoot && (levelName.equalsIgnoreCase("NULL") || levelName.equalsIgnoreCase("INHERITED"))) {
+                    addWarn(String.format("Log level %s is not authorized for ROOT logger.", levelName.toUpperCase()));
+                } else if (!levelName.equalsIgnoreCase("NULL") && !levelName.equalsIgnoreCase("INHERITED")) {
+                    logger.setLevel(Level.toLevel(config.getString("level")));
+                }
+            }
+        }
+
+        if (config.hasPath("additivity")) {
+            logger.setAdditive(config.getBoolean("additivity"));
+        }
+
+        if (config.hasPath("appenders")) {
+            List<String> appenderRefs = config.getStringList("appenders");
+            for (String appenderRef : appenderRefs) {
+                if (appenders.containsKey(appenderRef)) {
+                    logger.addAppender(appenders.get(appenderRef));
+                } else {
+                    addWarn(String.format("Unknown appender %s. Ignoring it.", appenderRef));
+                }
+            }
+        }
+
+    }
 
 }
