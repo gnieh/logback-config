@@ -19,9 +19,11 @@ package org.gnieh.logback.config;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.ServiceLoader;
 
 import ch.qos.logback.classic.jmx.JMXConfigurator;
 import ch.qos.logback.classic.jmx.MBeanUtil;
@@ -60,7 +62,16 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
         BeanDescriptionCache beanCache = new BeanDescriptionCache(loggerContext);
 
-        final Config config = ConfigFactory.load();
+
+        ConfigLoader loader = getLoader();
+        Config config;
+        try {
+            config = loader.load();
+        } catch (Throwable t) {
+            addError("Unable to load Typesafe config", t);
+            return;
+        }
+
         // get the logback configuration root
         final String logbackConfigRoot = config.getString("logback-root");
         // load the configuration per config loading rules
@@ -135,6 +146,28 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
                 }
             }
         }
+    }
+
+    /**
+     * Get the correct config factory object.
+     *
+     * @return the config factory
+     */
+    private ConfigLoader getLoader() {
+        Iterator<ConfigLoader> loaders = ServiceLoader.load(ConfigLoader.class).iterator();
+        if (loaders.hasNext()) {
+            return loaders.next();
+        }
+        return this::defaultLoader;
+    }
+
+    /**
+     * Default config loading method.
+     *
+     * @return the basic TS-config loading
+     */
+    private Config defaultLoader() {
+        return ConfigFactory.load();
     }
 
     private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config,
