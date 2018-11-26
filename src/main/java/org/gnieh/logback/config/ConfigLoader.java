@@ -22,6 +22,7 @@ import com.typesafe.config.Config;
 /**
  * Typesafe config loader interface.
  */
+@FunctionalInterface
 public interface ConfigLoader {
     Config load() throws Exception;
 }

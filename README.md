@@ -23,6 +23,13 @@ If you use sbt, add this dependency to your `build.sbt` file:
 libraryDependencies += "org.gnieh" % "logback.config" % "0.2.0"
 ```
 
+Typesafe configuration loading
+------------------
+
+The configurator first attempts to load the Typesafe configuration through the Java service-provider mechanism. It looks
+for a service-provider for the `org.gnieh.logback.config.ConfigLoader` interface, and calls the first one that it find.
+If none are found the Typesafe configuration is loaded by a call to ConfigFactory.load().
+
 Configuration root
 ------------------
 
