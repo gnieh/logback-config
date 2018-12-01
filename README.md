@@ -20,7 +20,7 @@ If you use maven, add the dependency to your `pom.xml` file:
 If you use sbt, add this dependency to your `build.sbt` file:
 
 ```scala
-libraryDependencies += "org.gnieh" % "logback.config" % "0.2.0"
+libraryDependencies += "org.gnieh" % "logback-config" % "0.2.0"
 ```
 
 Configuration root
