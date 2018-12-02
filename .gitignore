@@ -8,6 +8,7 @@
 .settings/
 target/
 logs/
-project/
+project/target
+project/project
 .project
 .classpath
