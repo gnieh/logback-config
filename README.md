@@ -72,7 +72,7 @@ The general configuration format is as follows:
 
 ```scala
 logback {
-  scanPeriod = 30 seconds
+  scan-period = 30 seconds
 
   appenders {
     appender-name {
