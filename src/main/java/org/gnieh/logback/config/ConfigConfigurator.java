@@ -351,7 +351,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
      * @param config        the logback TS-config
      */
     private void createChangeTask(LoggerContext loggerContext, Config config) {
-        if (config.hasPath("scan-period") && !config.getIsNull("scan-eriod")) {
+        if (config.hasPath("scan-period") && !config.getIsNull("scan-period")) {
             long delay = config.getDuration("scan-period", TimeUnit.MILLISECONDS);
             if (delay > 0) {
                 Runnable rocTask = () -> {
