@@ -1,6 +1,6 @@
 /*
  * This file is part of the logback-config project.
- * Copyright (c) 2017 Lucas Satabin
+ * Copyright (c) 2018 Lucas Satabin
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,30 +16,39 @@
  */
 package org.gnieh.logback.config;
 
+import java.io.File;
 import java.lang.management.ManagementFactory;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.ServiceLoader;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
-import ch.qos.logback.classic.jmx.JMXConfigurator;
-import ch.qos.logback.classic.jmx.MBeanUtil;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import com.typesafe.config.ConfigObject;
 import com.typesafe.config.ConfigValue;
+import com.typesafe.config.ConfigValueType;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.jmx.JMXConfigurator;
+import ch.qos.logback.classic.jmx.MBeanUtil;
 import ch.qos.logback.classic.spi.Configurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
+import ch.qos.logback.core.CoreConstants;
 import ch.qos.logback.core.FileAppender;
+import ch.qos.logback.core.joran.spi.ConfigurationWatchList;
 import ch.qos.logback.core.joran.util.beans.BeanDescriptionCache;
+import ch.qos.logback.core.joran.util.ConfigurationWatchListUtil;
 import ch.qos.logback.core.rolling.RollingPolicy;
 import ch.qos.logback.core.spi.ContextAwareBase;
 import ch.qos.logback.core.spi.LifeCycle;
@@ -116,7 +125,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
             if (jmxConfig.hasPath("context-name")) {
                 contextName = jmxConfig.getString("context-name");
             } else {
-                contextName = context.getName();
+                contextName = loggerContext.getName();
             }
 
             final String objectNameAsStr;
@@ -126,7 +135,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
                 objectNameAsStr = MBeanUtil.getObjectNameFor(contextName, JMXConfigurator.class);
             }
 
-            ObjectName objectName = MBeanUtil.string2ObjectName(context, this, objectNameAsStr);
+            ObjectName objectName = MBeanUtil.string2ObjectName(loggerContext, this, objectNameAsStr);
             if (objectName == null) {
                 addError("Failed construct ObjectName for [" + objectNameAsStr + "]");
                 return;
@@ -138,13 +147,20 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
                 // registered. Unregistering an MBean within invocation of itself
                 // caused jconsole to throw an NPE. (This occurs when the reload* method
                 // unregisters the
-                JMXConfigurator jmxConfigurator = new JMXConfigurator((LoggerContext) context, mbs, objectName);
+                JMXConfigurator jmxConfigurator = new JMXConfigurator(loggerContext, mbs, objectName);
                 try {
                     mbs.registerMBean(jmxConfigurator, objectName);
                 } catch (Exception e) {
                     addError("Failed to create mbean", e);
                 }
             }
+        }
+
+        // Use a LinkedHashSet so order is preserved. We use the first one in as the 'main' URL, under the assumption
+        // that maybe that matters somehow to logback. The way we traverse the config tree means that the first one we
+        // add will be one that is closer to the root of the tree.
+        if (registerFileWatchers(loggerContext, getSourceFiles(config.root(), new LinkedHashSet<>()))) {
+            createChangeTask(loggerContext, logbackConfig);
         }
     }
 
@@ -223,7 +239,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
         // file property (if any) must be set before any other property for appenders
         if (config.hasPath("file")) {
-            propertySetter.setProperty("file", config, context);
+            propertySetter.setProperty("file", config, loggerContext);
         }
 
         for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
@@ -239,11 +255,11 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
                         if (children != null)
                             children.add(child);
                     } else {
-                        propertySetter.setProperty(entry.getKey(), config, context);
+                        propertySetter.setProperty(entry.getKey(), config, loggerContext);
                     }
                     break;
                 default:
-                    propertySetter.setProperty(entry.getKey(), config, context);
+                    propertySetter.setProperty(entry.getKey(), config, loggerContext);
                     break;
             }
         }
@@ -283,6 +299,85 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
             }
         }
 
+    }
+
+    /**
+     * Find all real source files in the config. This does not include those encapsulated in jars, etc. Only those that
+     * are directly in the file system.
+     *
+     * @param config the TS-config
+     * @param files  the set to add newly found files to
+     *
+     * @return the set of files found, as URLs
+     */
+    private Set<URL> getSourceFiles(ConfigValue config, Set<URL> files) {
+        if (config.origin().filename() != null) {
+            // Check 'contains' first to avoid re-adding, and messing with the order
+            if (!files.contains(config.origin().url())) {
+                files.add(config.origin().url());
+            }
+        }
+        if (config.valueType() == ConfigValueType.OBJECT) {
+            for (ConfigValue value : ((ConfigObject)config).values()) {
+                getSourceFiles(value, files);
+            }
+        }
+        return files;
+    }
+
+    /**
+     * Register all real config files to be watched by logback.
+     *
+     * @param loggerContext the logger context
+     * @param sourceFiles   the source files to watch
+     *
+     * @return true if there were any files to watch
+     */
+    private boolean registerFileWatchers(LoggerContext loggerContext, Set<URL> sourceFiles) {
+        Iterator<URL> iterator = sourceFiles.iterator();
+        if (iterator.hasNext()) {
+            ConfigurationWatchListUtil.setMainWatchURL(loggerContext, iterator.next());
+            iterator.forEachRemaining(u -> ConfigurationWatchListUtil.addToWatchList(loggerContext, u));
+            return true;
+        }
+        addWarn("No configuration files to watch, so no file scanning is possible");
+        return false;
+    }
+
+    /**
+     * Create and schedule the task to check for changes to the watch list.
+     *
+     * @param loggerContext the logger context
+     * @param config        the logback TS-config
+     */
+    private void createChangeTask(LoggerContext loggerContext, Config config) {
+        if (config.hasPath("scanPeriod") && !config.getIsNull("scanPeriod")) {
+            long delay = config.getDuration("scanPeriod", TimeUnit.MILLISECONDS);
+            if (delay > 0) {
+                Runnable rocTask = () -> {
+                    ConfigurationWatchList configurationWatchList =
+                            ConfigurationWatchListUtil.getConfigurationWatchList(loggerContext);
+                    if (configurationWatchList == null) {
+                        addWarn("Null ConfigurationWatchList in context");
+                        return;
+                    }
+                    List<File> filesToWatch = configurationWatchList.getCopyOfFileWatchList();
+                    if (filesToWatch == null || filesToWatch.isEmpty()) {
+                        addInfo("Empty watch file list. Disabling ");
+                        return;
+                    }
+                    if (!configurationWatchList.changeDetected()) {
+                        return;
+                    }
+                    loggerContext.reset();
+                    configure(loggerContext);
+                };
+
+                loggerContext.putObject(CoreConstants.RECONFIGURE_ON_CHANGE_TASK, rocTask);
+                loggerContext.addScheduledFuture(loggerContext.getScheduledExecutorService().
+                        scheduleAtFixedRate(rocTask, delay, delay, TimeUnit.MILLISECONDS));
+            }
+        }
     }
 
 }
