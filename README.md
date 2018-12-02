@@ -30,6 +30,10 @@ The configurator first attempts to load the Typesafe configuration through the J
 for a service-provider for the `org.gnieh.logback.config.ConfigLoader` interface, and calls the first one that it find.
 If none are found the Typesafe configuration is loaded by a call to ConfigFactory.load().
 
+If the configuration value `scan-period` is assigned a duration value then all regular files (those directly contained in
+the file system) encountered in the Typesafe configuration will be checked for changes at that interval, and the
+configuration will be reloaded if any have been modified.
+
 Configuration root
 ------------------
 
@@ -68,6 +72,7 @@ The general configuration format is as follows:
 
 ```scala
 logback {
+  scan-period = 30 seconds
 
   appenders {
     appender-name {
