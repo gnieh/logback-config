@@ -2,7 +2,7 @@ name := "logback-config"
 
 organization := "org.gnieh"
 
-version := "0.3.0"
+version := "0.3.1"
 
 licenses += ("The Apache Software License, Version 2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 
@@ -23,6 +23,8 @@ crossPaths := false
 
 // exclude scala library, this is a pure java project
 autoScalaLibrary := false
+
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
 
 // The Nexus repo we're publishing to.
 publishTo := Some(
