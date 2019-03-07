@@ -8,8 +8,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.Appender;
 import ch.qos.logback.core.subst.NodeToStringTransformer;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigMemorySize;
@@ -31,7 +32,7 @@ import ch.qos.logback.core.util.PropertySetterException;
  * Usage:
  * <p>
  * Assume the configuration contains:
- * 
+ *
  * <pre>
  * first-name = Joe
  * age = 32
@@ -39,7 +40,7 @@ import ch.qos.logback.core.util.PropertySetterException;
  * </pre>
  *
  * The following code:
- * 
+ *
  * <pre>
  * ConfigPropertySetter ps = new ConfigPropertySetter(beanCache, obj);
  * ps.setProperty(&quot;first-name&quot;, config);
@@ -51,9 +52,9 @@ import ch.qos.logback.core.util.PropertySetterException;
  * obj.setMale(true) if methods exist with these signatures. Otherwise
  * appropriate warnings and/or errors are added to the associated
  * {@link Context}.
- * 
+ *
  * <p>
- * 
+ *
  * The client can also set a previously constructed object directly via
  * {@link #setRawProperty(String, Object)}.
  */
@@ -78,7 +79,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 	 * For example, configuration key my-property-name is mangled as
 	 * myPropertyName.
 	 */
-	public void setProperty(final String key, final Config config, final Context context) {
+	public void setProperty(final String key, final Config config, final Context context, final ConfigAppendersCache appendersCache) {
 
 		if (!config.hasPath(key)) {
 			return;
@@ -93,7 +94,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 				addWarn("No adder for property [" + key + "] in " + objClass.getName() + ".");
 			} else {
 				try {
-					addProperty(adder, key, config);
+					addProperty(adder, key, config, appendersCache);
 				} catch (PropertySetterException ex) {
 					addWarn("Failed to add property [" + key + "] to value \"" + config.getValue(key) + "\". ", ex);
 				}
@@ -238,7 +239,7 @@ public class ConfigPropertySetter extends ContextAwareBase {
 	}
 
 	@SuppressWarnings("unchecked")
-	private void addProperty(Method adder, String name, Config config) throws PropertySetterException {
+	private void addProperty(Method adder, String name, Config config, ConfigAppendersCache appendersCache) throws PropertySetterException {
 		Class<?>[] paramTypes = adder.getParameterTypes();
 
 		final List<? extends Object> arg;
@@ -294,6 +295,13 @@ public class ConfigPropertySetter extends ContextAwareBase {
 					result.add(convertToCharset(subst));
 				}
 				arg = result;
+			} else if (Appender.class.isAssignableFrom(type)) {
+				final List<String> appenderNames = config.getStringList(name);
+				final List<Appender<ILoggingEvent>> referencedAppenders = new ArrayList<>(appenderNames.size());
+				for (String appenderName : appenderNames) {
+					referencedAppenders.add(appendersCache.getAppender(appenderName));
+				}
+				arg = referencedAppenders;
 			} else {
 				arg = Collections.emptyList();
 			}
