@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.Charset;
 
+import ch.qos.logback.classic.AsyncAppender;
+import ch.qos.logback.core.AsyncAppenderBase;
 import org.junit.Test;
 
 import com.typesafe.config.ConfigFactory;
@@ -125,5 +127,51 @@ public class ConfigConfiguratorTest {
 		assertNull(consoleAppender);
 		fileAppender = orgGniehLogbackLogger.getAppender("file");
 		assertNull(fileAppender);
+	}
+
+	@Test
+	public void testConfigureAsyncAppender() {
+		System.setProperty("config.file", "src/test/resources/asyncAppender.conf");
+		ConfigFactory.invalidateCaches();
+
+		LoggerContext context = new LoggerContext();
+		ConfigConfigurator configurator = new ConfigConfigurator();
+		configurator.configure(context);
+
+		int errorCount = 0;
+		int warningCount = 0;
+		for (Status status : context.getStatusManager().getCopyOfStatusList()) {
+			if (status.getLevel() == Status.ERROR) {
+				System.out.println(String.format("ERROR : %s", status.getMessage()));
+				errorCount++;
+			} else if (status.getLevel() == Status.WARN) {
+				System.out.println(String.format("WARN : %s", status.getMessage()));
+				warningCount++;
+			} else if (status.getLevel() == Status.INFO) {
+				System.out.println(String.format("INFO : %s", status.getMessage()));
+			}
+
+		}
+		assertEquals(0, errorCount);
+		assertEquals(0, warningCount);
+
+		Logger rootLogger = context.getLoggerList().get(0);
+		Appender<?> rollingRef = rootLogger.getAppender("rolling");
+		assertTrue(rollingRef.isStarted());
+		Appender<?> asyncRef = rootLogger.getAppender("async");
+		assertTrue(asyncRef.isStarted());
+
+		assertTrue(rollingRef instanceof RollingFileAppender);
+		assertTrue(asyncRef instanceof AsyncAppender);
+
+		RollingFileAppender<?> rolling = (RollingFileAppender<?>) rollingRef;
+		assertTrue(rolling.isStarted());
+
+		AsyncAppenderBase<?> async = (AsyncAppenderBase<?>) asyncRef;
+		assertEquals(0, async.getDiscardingThreshold());
+		assertEquals(1000, async.getMaxFlushTime());
+		assertEquals(100, async.getQueueSize());
+		assertEquals(rolling, async.getAppender("rolling"));
+		assertTrue(async.isStarted());
 	}
 }

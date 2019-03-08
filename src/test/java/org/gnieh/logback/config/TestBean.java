@@ -4,6 +4,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.Appender;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigMemorySize;
 
@@ -28,6 +30,8 @@ public class TestBean {
 	private TestEnum enumProperty;
 
 	private List<Integer> ints = new ArrayList<>();
+
+	private List<Appender<ILoggingEvent>> appenders = new ArrayList<>();
 
 	public int getIntProperty() {
 		return intProperty;
@@ -107,6 +111,14 @@ public class TestBean {
 
 	public List<Integer> getInts() {
 		return ints;
+	}
+
+	public void addAppender(Appender<ILoggingEvent> appender) {
+		appenders.add(appender);
+	}
+
+	public List<Appender<ILoggingEvent>> getAppenders() {
+		return appenders;
 	}
 
 }

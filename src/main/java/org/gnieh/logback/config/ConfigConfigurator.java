@@ -87,12 +87,13 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
         final Config logbackConfig = config.getConfig(logbackConfigRoot);
 
         final Config appenderConfigs = logbackConfig.getConfig("appenders");
+        final ConfigAppendersCache appendersCache = new ConfigAppendersCache();
+        appendersCache.setLoader(name -> configureAppender(loggerContext, name, appenderConfigs.getConfig("\"" + name + "\""), beanCache, appendersCache));
         final Map<String, Appender<ILoggingEvent>> appenders = new HashMap<>();
         for (Entry<String, ConfigValue> entry : appenderConfigs.root().entrySet()) {
             if (entry.getValue() instanceof ConfigObject) {
                 try {
-                    appenders.put(entry.getKey(), configureAppender(loggerContext, entry.getKey(),
-                            appenderConfigs.getConfig("\"" + entry.getKey() + "\""), beanCache));
+                    appenders.put(entry.getKey(), appendersCache.getAppender(entry.getKey()));
                 } catch (Exception e) {
                     addError(String.format("Unable to configure appender %s.", entry.getKey()), e);
                 }
@@ -187,14 +188,14 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
     }
 
     private Appender<ILoggingEvent> configureAppender(LoggerContext loggerContext, String name, Config config,
-                                                      BeanDescriptionCache beanCache) throws ReflectiveOperationException {
+                                                      BeanDescriptionCache beanCache, ConfigAppendersCache appendersCache) throws ReflectiveOperationException {
         List<Object> children = new ArrayList<>();
 
         @SuppressWarnings("unchecked")
         Class<Appender<ILoggingEvent>> clazz = (Class<Appender<ILoggingEvent>>) Class
                 .forName(config.getString("class"));
 
-        Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children, beanCache);
+        Appender<ILoggingEvent> appender = this.configureObject(loggerContext, clazz, config, children, beanCache, appendersCache);
         appender.setName(name);
 
         for (Object child : children) {
@@ -214,21 +215,22 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
     /**
      * Configure an object of a given class.
      *
-     * @param loggerContext the context to assign to this object if it is
-     *                      {@link ContextAwareBase}
-     * @param clazz         the class to instantiate
-     * @param config        a configuration containing the object's properties - each
-     *                      top-level key except for "class" must have a corresponding setter
-     *                      method, or an adder method in the case of lists
-     * @param children      a list which, if not null, will be filled with any child objects
-     *                      assigned as properties
-     * @param beanCache     the bean cache instance
+     * @param loggerContext  the context to assign to this object if it is
+     *                       {@link ContextAwareBase}
+     * @param clazz          the class to instantiate
+     * @param config         a configuration containing the object's properties - each
+     *                       top-level key except for "class" must have a corresponding setter
+     *                       method, or an adder method in the case of lists
+     * @param children       a list which, if not null, will be filled with any child objects
+     *                       assigned as properties
+     * @param beanCache      the bean cache instance
+     * @param appendersCache the cache of references to other appenders
      * @return the object instantiated with all properties assigned
      * @throws ReflectiveOperationException if any setter/adder method is missing or if the class cannot be
      *                                      instantiated with a no-argument constructor
      */
     private <T> T configureObject(LoggerContext loggerContext, Class<T> clazz, Config config, List<Object> children,
-                                  BeanDescriptionCache beanCache) throws ReflectiveOperationException {
+                                  BeanDescriptionCache beanCache, ConfigAppendersCache appendersCache) throws ReflectiveOperationException {
         T object = clazz.newInstance();
 
         if (object instanceof ContextAwareBase)
@@ -239,7 +241,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
 
         // file property (if any) must be set before any other property for appenders
         if (config.hasPath("file")) {
-            propertySetter.setProperty("file", config, loggerContext);
+            propertySetter.setProperty("file", config, loggerContext, appendersCache);
         }
 
         for (Entry<String, ConfigValue> entry : config.withoutPath("class").withoutPath("file").root().entrySet()) {
@@ -249,17 +251,17 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
                     Config subConfig = config.getConfig("\"" + entry.getKey() + "\"");
                     if (subConfig.hasPath("class")) {
                         Class<?> childClass = Class.forName(subConfig.getString("class"));
-                        Object child = this.configureObject(loggerContext, childClass, subConfig, null, beanCache);
+                        Object child = this.configureObject(loggerContext, childClass, subConfig, null, beanCache, appendersCache);
                         String propertyName = NameUtils.toLowerCamelCase(entry.getKey());
                         propertySetter.setRawProperty(propertyName, child);
                         if (children != null)
                             children.add(child);
                     } else {
-                        propertySetter.setProperty(entry.getKey(), config, loggerContext);
+                        propertySetter.setProperty(entry.getKey(), config, loggerContext, appendersCache);
                     }
                     break;
                 default:
-                    propertySetter.setProperty(entry.getKey(), config, loggerContext);
+                    propertySetter.setProperty(entry.getKey(), config, loggerContext, appendersCache);
                     break;
             }
         }
