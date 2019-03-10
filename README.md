@@ -12,7 +12,7 @@ If you use maven, add the dependency to your `pom.xml` file:
 <dependency>
   <groupId>org.gnieh</groupId>
   <artifactId>logback-config</artifactId>
-  <version>0.3.1</version>
+  <version>0.4.0</version>
 </dependency>
 ```
 
@@ -20,7 +20,7 @@ If you use maven, add the dependency to your `pom.xml` file:
 If you use sbt, add this dependency to your `build.sbt` file:
 
 ```scala
-libraryDependencies += "org.gnieh" % "logback-config" % "0.3.1"
+libraryDependencies += "org.gnieh" % "logback-config" % "0.4.0"
 ```
 
 Typesafe configuration loading
