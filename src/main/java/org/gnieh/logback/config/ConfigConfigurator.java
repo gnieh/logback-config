@@ -339,7 +339,11 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
         Iterator<URL> iterator = sourceFiles.iterator();
         if (iterator.hasNext()) {
             ConfigurationWatchListUtil.setMainWatchURL(loggerContext, iterator.next());
-            iterator.forEachRemaining(u -> ConfigurationWatchListUtil.addToWatchList(loggerContext, u));
+            iterator.forEachRemaining(u -> {
+                if (u != null) {
+                    ConfigurationWatchListUtil.addToWatchList(loggerContext, u);
+                }
+            });
             return true;
         }
         addInfo("No configuration files to watch, so no file scanning is possible");

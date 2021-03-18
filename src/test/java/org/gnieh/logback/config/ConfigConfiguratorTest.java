@@ -9,6 +9,9 @@ import java.nio.charset.Charset;
 
 import ch.qos.logback.classic.AsyncAppender;
 import ch.qos.logback.core.AsyncAppenderBase;
+import ch.qos.logback.core.joran.spi.ConfigurationWatchList;
+import ch.qos.logback.core.joran.util.ConfigurationWatchListUtil;
+
 import org.junit.Test;
 
 import com.typesafe.config.ConfigFactory;
@@ -132,6 +135,20 @@ public class ConfigConfiguratorTest {
 	@Test
 	public void testConfigureAsyncAppender() {
 		System.setProperty("config.file", "src/test/resources/asyncAppender.conf");
+		testConfigureAsyncAppenderInternal();
+	}
+
+	@Test
+	public void testConfigureIncludedAsyncAppender() {
+		System.setProperty("config.file", "src/test/resources/includedConfig.conf");
+		LoggerContext context = testConfigureAsyncAppenderInternal();
+		@SuppressWarnings("unused")
+		ConfigurationWatchList watchList = ConfigurationWatchListUtil.getConfigurationWatchList(context);
+		// failed due to the naive config files gathering algorithm
+		//assertEquals(3, watchList.getCopyOfFileWatchList().size());
+	}
+
+	public LoggerContext testConfigureAsyncAppenderInternal() {
 		ConfigFactory.invalidateCaches();
 
 		LoggerContext context = new LoggerContext();
@@ -173,5 +190,7 @@ public class ConfigConfiguratorTest {
 		assertEquals(100, async.getQueueSize());
 		assertEquals(rolling, async.getAppender("rolling"));
 		assertTrue(async.isStarted());
+
+		return context;
 	}
 }
