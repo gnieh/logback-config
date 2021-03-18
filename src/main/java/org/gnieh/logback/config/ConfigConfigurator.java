@@ -342,7 +342,7 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
             iterator.forEachRemaining(u -> ConfigurationWatchListUtil.addToWatchList(loggerContext, u));
             return true;
         }
-        addWarn("No configuration files to watch, so no file scanning is possible");
+        addInfo("No configuration files to watch, so no file scanning is possible");
         return false;
     }
 
