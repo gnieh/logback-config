@@ -86,6 +86,17 @@ public class ConfigConfigurator extends ContextAwareBase implements Configurator
         // load the configuration per config loading rules
         final Config logbackConfig = config.getConfig(logbackConfigRoot);
 
+        if (logbackConfig.hasPath("properties")) {
+            if (logbackConfig.getValue("properties") instanceof ConfigObject) {
+                final ConfigObject propertyConfigs = (ConfigObject) logbackConfig.getValue("properties");
+                for (Entry<String, ConfigValue> entry : propertyConfigs.toConfig().entrySet()) {
+                    loggerContext.putProperty(entry.getKey(), entry.getValue().unwrapped().toString());
+                }
+            } else {
+                addWarn("Invalid properties configuration. Ignoring it.");
+            }
+        }
+
         final Config appenderConfigs = logbackConfig.getConfig("appenders");
         final ConfigAppendersCache appendersCache = new ConfigAppendersCache();
         appendersCache.setLoader(name -> configureAppender(loggerContext, name, appenderConfigs.getConfig("\"" + name + "\""), beanCache, appendersCache));
